@@ -4,20 +4,30 @@ import streamlit as st
 from langchain_core.prompts import MessagesPlaceholder
 from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 from langchain_core.runnables import chain
-from pydantic import BaseModel
+from pydantic import BaseModel  # Needed for inheritance
 import os
 import requests
 import json
 
 # Update to point to the backend container
-llm2 = ChatOllama(model="granite3.2:2b", base_url="http://backend:11434", streaming=True)
-llm = ChatOllama(model="command-r7b-arabic", base_url="http://backend:11434", streaming=True)
+llm = ChatOllama(model="granite3.2:2b", base_url="http://backend:11434", streaming=True)
+llm2 = ChatOllama(model="command-r7b-arabic", base_url="http://backend:11434", streaming=True)
+
+# --- Define custom Pydantic model classes ---
+class HumanMessage(BaseModel):
+    content: str
+    type: str = "human"  # Default value is important
+
+class AIMessage(BaseModel):
+    content: str
+    type: str = "ai"  # Default value is important
+
 
 # Initialize session state for model selection if it doesn't exist
 if 'current_model' not in st.session_state:
     st.session_state.current_model = 'الأول'
 if 'langchain_messages' not in st.session_state:
-    st.session_state['langchain_messages'] = []
+    st.session_state['langchain_messages'] = []  # Initialize as an empty list
 
 # Add model selection dropdown with default value
 model_option = st.sidebar.selectbox(
@@ -102,19 +112,19 @@ if uploaded_files:
             st.sidebar.success(f"Saved File: {uploaded_file.name}")
 
 RAG_SERVICE_URL = "http://rag_service:8000/query"
-def query_rag_service(question: str, model_name: str) -> dict:
+def query_rag_service(question: str, model_name: str) -> str:
     """Queries the RAG service with a question and returns the answer."""
     try:
         response = requests.post(
             RAG_SERVICE_URL,
             json={"question": question, "model_name": model_name},
             timeout=120
-        )
+         )
         response.raise_for_status()
-        return response.json()  # Ensure the response is parsed as JSON
+        return response.json()
     except requests.exceptions.RequestException as e:
         st.error(f"Error querying RAG service: {e}")
-        return {"answer": "Error: Could not communicate with RAG service.", "source": "error"}
+        return "Error: Could not communicate with RAG service."
 
 
 for message in st.session_state["langchain_messages"]:
@@ -148,9 +158,10 @@ if question:
                unsafe_allow_html=True
            )
 
-        st.session_state["langchain_messages"].append(
-           BaseModel(content=question, type="human")
-        )
-        st.session_state["langchain_messages"].append(
-             BaseModel(content=answer, type="ai")
-        )
+    # --- Correctly use the custom message classes ---
+    st.session_state["langchain_messages"].append(
+        HumanMessage(content=question)  # Corrected: Use HumanMessage
+    )
+    st.session_state["langchain_messages"].append(
+        AIMessage(content=answer)  # Corrected: Use AIMessage
+    )
