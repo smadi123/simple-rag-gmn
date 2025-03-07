@@ -1,0 +1,34 @@
+# docker-compose.yml (Development)
+version: '3.8'
+
+services:
+  backend:
+    image: backend
+    volumes:
+      - ./data:/data
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./frontend:/app
+      - ./frontend/static:/app/static
+      - ./frontend/.streamlit:/app/.streamlit
+    environment:
+      - WATCHDOG_TIMEOUT=10
+    depends_on:
+      - backend
+      - rag_service
+
+  rag_service:
+    build:
+      context: ./rag_service
+    volumes:
+      - ./rag_service:/app
+      - ./data:/data
+    environment:
+      - OLLAMA_BASE_URL=http://backend:11434
+    depends_on:
+      - backend

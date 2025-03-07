@@ -1,0 +1,7 @@
+streamlit
+langchain
+langchain-ollama
+langchain_community
+pydantic
+pypdf
+requests
