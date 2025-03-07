@@ -1,5 +1,7 @@
 fastapi
 uvicorn
-llama-index
-llama-index-embeddings-ollama
+llama-index-core
 pypdf
+langchain
+langchain-community
+langchain-ollama

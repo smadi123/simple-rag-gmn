@@ -102,19 +102,19 @@ if uploaded_files:
             st.sidebar.success(f"Saved File: {uploaded_file.name}")
 
 RAG_SERVICE_URL = "http://rag_service:8000/query"
-def query_rag_service(question: str, model_name: str) -> str:
+def query_rag_service(question: str, model_name: str) -> dict:
     """Queries the RAG service with a question and returns the answer."""
     try:
         response = requests.post(
             RAG_SERVICE_URL,
             json={"question": question, "model_name": model_name},
             timeout=120
-         )
+        )
         response.raise_for_status()
-        return response.json()
+        return response.json()  # Ensure the response is parsed as JSON
     except requests.exceptions.RequestException as e:
         st.error(f"Error querying RAG service: {e}")
-        return "Error: Could not communicate with RAG service."
+        return {"answer": "Error: Could not communicate with RAG service.", "source": "error"}
 
 
 for message in st.session_state["langchain_messages"]:
