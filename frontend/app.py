@@ -4,30 +4,30 @@ import streamlit as st
 from langchain_core.prompts import MessagesPlaceholder
 from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 from langchain_core.runnables import chain
-from pydantic import BaseModel  # Needed for inheritance
+from pydantic import BaseModel
 import os
 import requests
 import json
+import io
 
 # Update to point to the backend container
-llm = ChatOllama(model="granite3.2:2b", base_url="http://backend:11434", streaming=True)
-llm2 = ChatOllama(model="command-r7b-arabic", base_url="http://backend:11434", streaming=True)
+llm2 = ChatOllama(model="granite3.2:2b", base_url="http://backend:11434", streaming=True)
+llm = ChatOllama(model="command-r7b-arabic", base_url="http://backend:11434", streaming=True)
 
 # --- Define custom Pydantic model classes ---
 class HumanMessage(BaseModel):
     content: str
-    type: str = "human"  # Default value is important
+    type: str = "human"
 
 class AIMessage(BaseModel):
     content: str
-    type: str = "ai"  # Default value is important
-
+    type: str = "ai"
 
 # Initialize session state for model selection if it doesn't exist
 if 'current_model' not in st.session_state:
     st.session_state.current_model = 'الأول'
 if 'langchain_messages' not in st.session_state:
-    st.session_state['langchain_messages'] = []  # Initialize as an empty list
+    st.session_state['langchain_messages'] = []
 
 # Add model selection dropdown with default value
 model_option = st.sidebar.selectbox(
@@ -112,19 +112,23 @@ if uploaded_files:
             st.sidebar.success(f"Saved File: {uploaded_file.name}")
 
 RAG_SERVICE_URL = "http://rag_service:8000/query"
-def query_rag_service(question: str, model_name: str) -> str:
-    """Queries the RAG service with a question and returns the answer."""
+
+def query_rag_service(question: str, model_name: str):
+    """Queries the RAG service with a question and returns a stream."""
     try:
         response = requests.post(
             RAG_SERVICE_URL,
             json={"question": question, "model_name": model_name},
+            stream=True,  # Enable streaming
             timeout=120
          )
         response.raise_for_status()
-        return response.json()
+        return response
+
     except requests.exceptions.RequestException as e:
         st.error(f"Error querying RAG service: {e}")
-        return "Error: Could not communicate with RAG service."
+        return None # Return None in case of error
+
 
 
 for message in st.session_state["langchain_messages"]:
@@ -144,24 +148,35 @@ if question:
         )
 
     with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
         response = query_rag_service(question, selected_llm.model)
-        answer = response["answer"]
-        answer_from = response["source"]
-        if answer_from == "knowledge_base":
-             st.markdown(
-                 f'<div style="text-align: right; direction: rtl;">{answer} (من قاعدة المعرفة)</div>',
-                 unsafe_allow_html=True
-            )
-        else:
-           st.markdown(
-               f'<div style="text-align: right; direction: rtl;">{answer} (من المعرفة العامة للنموذج)</div>',
-               unsafe_allow_html=True
-           )
+        if response:
+            for line in response.iter_lines():
+                if line:
+                    try:
+                        # --- Correctly parse SSE data ---
+                        line = line.decode("utf-8")  # Decode the line
+                        if line.startswith("data:"):
+                            data_json = json.loads(line[6:]) # Remove "data: " prefix
 
-    # --- Correctly use the custom message classes ---
-    st.session_state["langchain_messages"].append(
-        HumanMessage(content=question)  # Corrected: Use HumanMessage
-    )
-    st.session_state["langchain_messages"].append(
-        AIMessage(content=answer)  # Corrected: Use AIMessage
-    )
+                            if "error" in data_json:
+                                st.error(data_json["error"])
+                                break
+
+                            if "content" in data_json:
+                                full_response += data_json["content"]
+                                message_placeholder.markdown(full_response + "▌")
+
+                    except (json.JSONDecodeError, KeyError) as e:
+                        st.error(f"Error processing chunk: {e} - {line=}")  # More informative error
+                        continue  # Or break, depending on desired behavior
+
+        message_placeholder.markdown(full_response)
+
+        st.session_state["langchain_messages"].append(
+            HumanMessage(content=question)
+        )
+        st.session_state["langchain_messages"].append(
+            AIMessage(content=full_response)
+        )
